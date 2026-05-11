@@ -1,6 +1,8 @@
 import streamlit as st
 import streamlit.components.v1 as components
 import json
+import math
+import random
 from datetime import datetime
 from pathlib import Path
 
@@ -234,6 +236,27 @@ st.markdown(
         background: rgba(212, 168, 90, 0.18);
         border-color: #d4a85a;
         color: #f0d896;
+    }
+
+    /* Secondary "spin the wheel" CTA — same shape, teal accent */
+    .wheel-cta-wrap {
+        margin-top: 0.6rem;
+    }
+    .wheel-cta-wrap .stButton > button {
+        background: linear-gradient(90deg, rgba(93, 214, 192, 0.10), rgba(93, 214, 192, 0.04));
+        border: 1px solid rgba(93, 214, 192, 0.35);
+        color: #5dd6c0;
+        font-family: 'Playfair Display', serif;
+        font-size: 1.05rem;
+        padding: 0.9rem 1.5rem;
+        border-radius: 10px;
+        width: 100%;
+        font-style: italic;
+    }
+    .wheel-cta-wrap .stButton > button:hover {
+        background: rgba(93, 214, 192, 0.14);
+        border-color: #5dd6c0;
+        color: #8ee7d2;
     }
 
     /* Active mood banner */
@@ -931,6 +954,119 @@ TOOL_TITLES = {
 }
 
 
+# ── Spinning wheel ──────────────────────────────────────────────────────────
+
+# Tools eligible for the random wheel — curated for "any time" practice,
+# excluding tools that only make sense in specific situations.
+WHEEL_TOOLS = [
+    {"id": "Breathe", "icon": "🌿"},
+    {"id": "Ground",  "icon": "🌱"},
+    {"id": "1",       "icon": "🪞"},
+    {"id": "2",       "icon": "🍃"},
+    {"id": "3",       "icon": "⚡"},
+    {"id": "4",       "icon": "🙏"},
+    {"id": "6",       "icon": "🎯"},
+    {"id": "7",       "icon": "📵"},
+    {"id": "10",      "icon": "🫶"},
+    {"id": "13",      "icon": "☀️"},
+]
+
+
+def generate_wheel_html(target_idx, nonce):
+    """Build the SVG wheel. If target_idx is None, render static (no spin).
+    Otherwise, animate from 0 to land on segment at target_idx."""
+    tools = WHEEL_TOOLS
+    n = len(tools)
+    seg = 360.0 / n
+    cx, cy, r = 200, 200, 180
+
+    segments = []
+    for i, tool in enumerate(tools):
+        a1 = i * seg
+        a2 = (i + 1) * seg
+        a1r = math.radians(a1)
+        a2r = math.radians(a2)
+        x1 = cx + r * math.sin(a1r)
+        y1 = cy - r * math.cos(a1r)
+        x2 = cx + r * math.sin(a2r)
+        y2 = cy - r * math.cos(a2r)
+        color = '#1a1d22' if i % 2 == 0 else '#22252b'
+        if target_idx is not None and i == target_idx:
+            color = 'rgba(212, 168, 90, 0.22)'
+        path = f'M {cx} {cy} L {x1:.1f} {y1:.1f} A {r} {r} 0 0 1 {x2:.1f} {y2:.1f} Z'
+        segments.append(
+            f'<path d="{path}" fill="{color}" stroke="#0d0e10" stroke-width="1.5"/>'
+        )
+        # Emoji centered in segment
+        mid_a = (a1 + a2) / 2.0
+        mid_r = math.radians(mid_a)
+        tr = 130
+        tx = cx + tr * math.sin(mid_r)
+        ty = cy - tr * math.cos(mid_r)
+        segments.append(
+            f'<text x="{tx:.1f}" y="{ty:.1f}" text-anchor="middle" '
+            f'dominant-baseline="central" font-size="28" font-family="Georgia">'
+            f'{tool["icon"]}</text>'
+        )
+    segments_html = "\n".join(segments)
+
+    if target_idx is not None:
+        target_mid = target_idx * seg + seg / 2.0
+        final_rot = 5 * 360 + (360 - target_mid)
+        animation_css = (
+            "@keyframes wheelspin" + str(nonce) + " { "
+            "from { transform: rotate(0deg); } "
+            "to { transform: rotate(" + f"{final_rot:.2f}" + "deg); } "
+            "} "
+            "#wheel" + str(nonce) + " { "
+            "transform-origin: 200px 200px; "
+            "animation: wheelspin" + str(nonce) + " 4s cubic-bezier(0.17, 0.67, 0.32, 1) forwards; "
+            "}"
+        )
+        chosen_title = TOOL_TITLES[tools[target_idx]["id"]]
+        result_opacity = "0"
+        reveal_delay_ms = 4000
+    else:
+        animation_css = ""
+        chosen_title = 'Click "Spin" to pick a tool'
+        result_opacity = "1"
+        reveal_delay_ms = 0
+
+    result_css = (
+        ".wheel-result-" + str(nonce) + " { "
+        "text-align: center; color: #d4a85a; "
+        "font-family: 'Playfair Display', Georgia, serif; "
+        "font-style: italic; font-size: 1.25rem; "
+        "margin: 1.2rem 0 0.3rem 0; opacity: " + result_opacity + "; "
+        "transition: opacity 0.6s ease-in; "
+        "}"
+    )
+
+    html = (
+        '<!-- spin ' + str(nonce) + ' -->'
+        '<style>' + animation_css + ' ' + result_css + '</style>'
+        '<svg viewBox="0 0 400 420" width="100%" '
+        'style="max-width: 380px; display: block; margin: 0 auto;">'
+        '<g id="wheel' + str(nonce) + '">' + segments_html + '</g>'
+        '<circle cx="200" cy="200" r="22" fill="#0d0e10" '
+        'stroke="#d4a85a" stroke-width="2"/>'
+        '<text x="200" y="207" text-anchor="middle" font-size="18" '
+        'fill="#d4a85a">✦</text>'
+        '<polygon points="200,5 186,40 214,40" fill="#d4a85a"/>'
+        '</svg>'
+        '<div class="wheel-result-' + str(nonce) + '" id="result' + str(nonce) + '">'
+        '✦ ' + chosen_title + ' ✦</div>'
+        '<script>'
+        '(function() { '
+        'var el = document.getElementById("result' + str(nonce) + '"); '
+        'if (el) setTimeout(function() { el.style.opacity = 1; }, '
+        + str(reveal_delay_ms) + '); '
+        '})();'
+        '</script>'
+    )
+    return html
+
+
 # ── Mood map ─────────────────────────────────────────────────────────────────
 # 6 core moods (always visible). Each maps to 1-3 tools, primary first.
 
@@ -971,6 +1107,9 @@ ALL_MOODS = {m["id"]: m for m in MOODS_PRIMARY + MOODS_MORE}
 st.session_state.setdefault("active_mood", None)
 st.session_state.setdefault("active_tool", None)
 st.session_state.setdefault("breath_open", False)
+st.session_state.setdefault("wheel_open", False)
+st.session_state.setdefault("spin_idx", None)
+st.session_state.setdefault("spin_nonce", 0)
 
 
 # ── 1. PRIMARY ACTION: One-tap settle ────────────────────────────────────────
@@ -993,9 +1132,45 @@ if st.session_state.breath_open:
     )
 
 
+# ── 1b. SECONDARY: Spin the wheel for a random tool ──────────────────────────
+
+st.markdown('<div class="wheel-cta-wrap">', unsafe_allow_html=True)
+wheel_label = ("✕  Close the wheel" if st.session_state.wheel_open
+               else "🎲  Spin the wheel — pick a tool for me")
+if st.button(wheel_label, key="cta_wheel", use_container_width=True):
+    st.session_state.wheel_open = not st.session_state.wheel_open
+    st.rerun()
+st.markdown('</div>', unsafe_allow_html=True)
+
+if st.session_state.wheel_open:
+    components.html(
+        generate_wheel_html(
+            target_idx=st.session_state.spin_idx,
+            nonce=st.session_state.spin_nonce,
+        ),
+        height=520,
+    )
+    wcols = st.columns([1, 1])
+    with wcols[0]:
+        if st.button("🎲  Spin", key="do_spin", use_container_width=True):
+            st.session_state.spin_idx = random.randint(0, len(WHEEL_TOOLS) - 1)
+            st.session_state.spin_nonce += 1
+            st.rerun()
+    with wcols[1]:
+        if st.session_state.spin_idx is not None:
+            chosen = WHEEL_TOOLS[st.session_state.spin_idx]
+            chosen_title = TOOL_TITLES[chosen["id"]]
+            if st.button(f"Use {chosen_title} ↓", key="use_spin",
+                         use_container_width=True):
+                st.session_state.active_tool = chosen["id"]
+                st.session_state.active_mood = None  # wheel-picked, no mood
+                st.session_state.wheel_open = False
+                st.rerun()
+
+
 # ── 2. MOOD-BASED ROUTING ────────────────────────────────────────────────────
 
-if st.session_state.active_mood is None:
+if st.session_state.active_tool is None:
     # Show mood grid
     st.markdown('<div class="section-prompt">What\'s happening right now?</div>', unsafe_allow_html=True)
 
@@ -1040,21 +1215,29 @@ if st.session_state.active_mood is None:
         st.markdown('</div>', unsafe_allow_html=True)
 
 else:
-    # A mood is selected — show the active tool
-    mood = ALL_MOODS[st.session_state.active_mood]
+    # A tool is selected — either from a mood or from the wheel
     active_tool_id = st.session_state.active_tool
+    active_mood_id = st.session_state.active_mood
+    mood = ALL_MOODS.get(active_mood_id) if active_mood_id else None
+
+    if mood:
+        banner_text = (f'{mood["icon"]} &nbsp; {mood["label"]} — using '
+                       f'<strong>{TOOL_TITLES[active_tool_id]}</strong>')
+        back_label = "← Different feeling"
+    else:
+        banner_text = (f'🎲 &nbsp; Random pick — using '
+                       f'<strong>{TOOL_TITLES[active_tool_id]}</strong>')
+        back_label = "← Back"
 
     # Header bar with back link
     cols = st.columns([5, 2])
     with cols[0]:
         st.markdown(
-            f'<div class="active-mood-banner">'
-            f'{mood["icon"]} &nbsp; {mood["label"]} — using <strong>{TOOL_TITLES[active_tool_id]}</strong>'
-            f'</div>',
+            f'<div class="active-mood-banner">{banner_text}</div>',
             unsafe_allow_html=True,
         )
     with cols[1]:
-        if st.button("← Different feeling", key="back_to_moods", use_container_width=True):
+        if st.button(back_label, key="back_to_moods", use_container_width=True):
             st.session_state.active_mood = None
             st.session_state.active_tool = None
             st.rerun()
@@ -1062,8 +1245,8 @@ else:
     # Render the active tool
     TOOL_DISPATCH[active_tool_id](kp=f"mood_{active_tool_id}")
 
-    # Tool switcher (if mood has multiple recommended tools)
-    if len(mood["tools"]) > 1:
+    # Tool switcher (only for mood-picked tools with multiple recommendations)
+    if mood and len(mood["tools"]) > 1:
         st.markdown('<div class="switcher-label">Other tools that may help</div>', unsafe_allow_html=True)
         cols = st.columns(len(mood["tools"]))
         for i, tid in enumerate(mood["tools"]):
