@@ -259,6 +259,73 @@ st.markdown(
         color: #8ee7d2;
     }
 
+    /* Worry box CTA — dusty lavender accent */
+    .worry-cta-wrap {
+        margin-top: 0.6rem;
+    }
+    .worry-cta-wrap .stButton > button {
+        background: linear-gradient(90deg, rgba(155, 143, 184, 0.10), rgba(155, 143, 184, 0.04));
+        border: 1px solid rgba(155, 143, 184, 0.35);
+        color: #b3a8cc;
+        font-family: 'Playfair Display', serif;
+        font-size: 1.05rem;
+        padding: 0.9rem 1.5rem;
+        border-radius: 10px;
+        width: 100%;
+        font-style: italic;
+    }
+    .worry-cta-wrap .stButton > button:hover {
+        background: rgba(155, 143, 184, 0.14);
+        border-color: #b3a8cc;
+        color: #c5bbdb;
+    }
+
+    /* Worry-day group headers */
+    .worry-day-header {
+        font-family: 'Playfair Display', serif;
+        color: #c9c5bb;
+        font-size: 1.05rem;
+        margin: 1.2rem 0 0.6rem 0;
+        padding-bottom: 0.3rem;
+        border-bottom: 1px solid #24262b;
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+    }
+    .worry-day-header .count {
+        font-size: 0.75rem;
+        color: #6f6c66;
+        font-family: 'Inter', sans-serif;
+        font-style: normal;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+    }
+    .worry-item {
+        background: #1a1d22;
+        border: 1px solid #2a2c30;
+        border-radius: 8px;
+        padding: 0.9rem 1.1rem;
+        margin: 0.5rem 0;
+    }
+    .worry-item.addressed {
+        opacity: 0.45;
+    }
+    .worry-text {
+        color: #d8d6d0;
+        font-size: 0.95rem;
+        line-height: 1.5;
+    }
+    .worry-text.addressed {
+        text-decoration: line-through;
+        color: #8a8780;
+    }
+    .worry-meta {
+        color: #6f6c66;
+        font-size: 0.75rem;
+        margin-top: 0.4rem;
+        letter-spacing: 0.05em;
+    }
+
     /* Active mood banner */
     .active-mood-banner {
         background: rgba(212, 168, 90, 0.06);
@@ -1110,6 +1177,7 @@ st.session_state.setdefault("breath_open", False)
 st.session_state.setdefault("wheel_open", False)
 st.session_state.setdefault("spin_idx", None)
 st.session_state.setdefault("spin_nonce", 0)
+st.session_state.setdefault("worry_open", False)
 
 
 # ── 1. PRIMARY ACTION: One-tap settle ────────────────────────────────────────
@@ -1132,7 +1200,154 @@ if st.session_state.breath_open:
     )
 
 
-# ── 1b. SECONDARY: Spin the wheel for a random tool ──────────────────────────
+# ── 1b. UTILITY: Worry box — capture and review worries by day ───────────────
+
+_active_worries = sum(1 for w in data["worry_list"] if not w.get("addressed"))
+if st.session_state.worry_open:
+    worry_label = "✕  Close worry box"
+elif _active_worries > 0:
+    worry_label = f"📋  My worry box · {_active_worries} active"
+else:
+    worry_label = "📋  My worry box — capture worries to address later"
+
+st.markdown('<div class="worry-cta-wrap">', unsafe_allow_html=True)
+if st.button(worry_label, key="cta_worry", use_container_width=True):
+    st.session_state.worry_open = not st.session_state.worry_open
+    st.rerun()
+st.markdown('</div>', unsafe_allow_html=True)
+
+if st.session_state.worry_open:
+    # Quick capture card
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    card_header("📋", "Capture a worry",
+                "Drop it here. Address it later at worry time.")
+    new_worry = st.text_area("New worry", key="wbox_new", height=80,
+                              label_visibility="collapsed",
+                              placeholder="What's worrying me right now?")
+    bc1, bc2 = st.columns([1, 3])
+    with bc1:
+        if st.button("Capture", key="wbox_add", use_container_width=True):
+            if new_worry.strip():
+                data["worry_list"].append({
+                    "text": new_worry.strip(),
+                    "captured": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    "addressed": False,
+                })
+                save_data(data)
+                st.rerun()
+    with bc2:
+        st.markdown(
+            '<div class="card-body" style="font-size: 0.85rem; color: #8a8780; '
+            'padding-top: 0.5rem;"><em>'
+            '"I see you. I\'ll address you at worry time."</em></div>',
+            unsafe_allow_html=True,
+        )
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # Worry time settings (collapsed)
+    slot_display = data["worry_time_slot"] or "not set yet"
+    with st.expander(f"⏰  Worry time slot: {slot_display}"):
+        c1, c2 = st.columns(2)
+        with c1:
+            slot = st.text_input("My worry time (15-20 min, NOT before bed)",
+                                  value=data["worry_time_slot"], key="wbox_slot",
+                                  placeholder="e.g., 6:30 PM daily")
+            if slot != data["worry_time_slot"]:
+                data["worry_time_slot"] = slot
+                save_data(data)
+        with c2:
+            place = st.text_input("Where I'll do it",
+                                   value=data["worry_time_place"], key="wbox_place",
+                                   placeholder="e.g., kitchen table")
+            if place != data["worry_time_place"]:
+                data["worry_time_place"] = place
+                save_data(data)
+
+    # Group worries by date
+    if not data["worry_list"]:
+        st.markdown(
+            '<div class="aside" style="margin-top: 1.5rem;">'
+            "No worries captured yet. When one pops up during the day, drop it above."
+            "</div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        worries_by_date = {}
+        for i, w in enumerate(data["worry_list"]):
+            captured = w.get("captured", "")
+            date_part = captured.split(" ")[0] if " " in captured else captured[:10]
+            worries_by_date.setdefault(date_part, []).append((i, w))
+
+        today_date = datetime.now().date()
+        sorted_dates = sorted(worries_by_date.keys(), reverse=True)
+
+        st.markdown(
+            '<div class="section-title" style="margin-top: 1.5rem;">My worry log</div>',
+            unsafe_allow_html=True,
+        )
+
+        for date_str in sorted_dates:
+            try:
+                d_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+            except ValueError:
+                continue
+
+            delta = (today_date - d_date).days
+            if delta == 0:
+                label = "Today"
+            elif delta == 1:
+                label = "Yesterday"
+            elif delta < 7:
+                label = d_date.strftime("%A")
+            else:
+                label = d_date.strftime("%b %d, %Y")
+
+            day_worries = worries_by_date[date_str]
+            active_n = sum(1 for _, w in day_worries if not w.get("addressed"))
+            addressed_n = sum(1 for _, w in day_worries if w.get("addressed"))
+
+            count_str = f"{len(day_worries)} captured"
+            if active_n:
+                count_str += f" · {active_n} active"
+            if addressed_n:
+                count_str += f" · {addressed_n} addressed"
+
+            with st.expander(f"{label}   ·   {count_str}", expanded=(delta == 0)):
+                for idx, w in day_worries:
+                    is_addressed = w.get("addressed", False)
+                    text_cls = "worry-text addressed" if is_addressed else "worry-text"
+                    item_cls = "worry-item addressed" if is_addressed else "worry-item"
+                    st.markdown(
+                        f'<div class="{item_cls}">'
+                        f'<div class="{text_cls}">{w["text"]}</div>'
+                        f'<div class="worry-meta">Captured {w["captured"]}</div>'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
+                    actions = st.columns([1, 1, 4])
+                    if not is_addressed:
+                        with actions[0]:
+                            if st.button("✓ Addressed", key=f"wbox_done_{idx}",
+                                         use_container_width=True):
+                                data["worry_list"][idx]["addressed"] = True
+                                save_data(data)
+                                st.rerun()
+                    else:
+                        with actions[0]:
+                            if st.button("↺ Unmark", key=f"wbox_undo_{idx}",
+                                         use_container_width=True):
+                                data["worry_list"][idx]["addressed"] = False
+                                save_data(data)
+                                st.rerun()
+                    with actions[1]:
+                        if st.button("Delete", key=f"wbox_del_{idx}",
+                                     use_container_width=True):
+                            data["worry_list"].pop(idx)
+                            save_data(data)
+                            st.rerun()
+
+
+# ── 1c. SECONDARY: Spin the wheel for a random tool ──────────────────────────
 
 st.markdown('<div class="wheel-cta-wrap">', unsafe_allow_html=True)
 wheel_label = ("✕  Close the wheel" if st.session_state.wheel_open
